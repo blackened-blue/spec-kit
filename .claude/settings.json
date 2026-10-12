@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && { [ -e .speckit ] || scripts/setup-speckit.sh >&2; }"
+          }
+        ]
+      }
+    ]
+  }
+}
