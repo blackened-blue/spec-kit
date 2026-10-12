@@ -426,3 +426,9 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# Spec Kit lives on branch speckit (worktree at .speckit/)
+/.speckit/
+/.claude/skills
+/.kiro/skills
+/.specify
