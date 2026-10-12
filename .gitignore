@@ -436,3 +436,4 @@ FodyWeavers.xsd
 
 # macOS
 .DS_Store
+.claude/settings.local.json
