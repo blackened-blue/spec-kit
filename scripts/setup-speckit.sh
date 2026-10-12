@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Set up Spec Kit in this checkout. Spec Kit lives on branch `speckit`, not on the code branches.
-# Creates the worktree .speckit/, links .claude/skills and .specify into it, and copies .kiro/skills
-# (KiroCrew rejects symlinked skills). Safe to re-run.
+# Creates the worktree .speckit/, links .claude/skills, .specify and specs into it, and copies
+# .kiro/skills (KiroCrew rejects symlinked skills). Safe to re-run.
 set -euo pipefail
 
 BRANCH=speckit
@@ -21,8 +21,10 @@ link() {  # link <target relative to link dir> <link path>
   mkdir -p "$(dirname "$2")"
   ln -sfn "$1" "$2"
 }
+mkdir -p .speckit/specs   # feature specs are written to <root>/specs; keep them on the speckit branch
 link ../.speckit/.claude/skills .claude/skills
 link .speckit/.specify .specify
+link .speckit/specs specs
 
 .speckit/.specify/scripts/sync-kiro-skills.sh
-echo "Spec Kit ready: .speckit (branch $BRANCH), .claude/skills, .specify, .kiro/skills"
+echo "Spec Kit ready: .speckit (branch $BRANCH), .claude/skills, .specify, specs, .kiro/skills"
