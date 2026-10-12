@@ -432,3 +432,6 @@ FodyWeavers.xsd
 /.claude/skills
 /.kiro/skills
 /.specify
+
+# macOS
+.DS_Store
