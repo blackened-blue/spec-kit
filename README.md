@@ -131,7 +131,7 @@ git -C .speckit log --oneline           # the "Add Spec Kit" commit
 
 ### 6. Report to the user
 
-Say what was created, that nothing was pushed, and that the `speckit-*` skills appear from the **next** session (see [Notes](#notes)). Offer to push `speckit` and the code branch.
+Say what was created, that nothing was pushed, that specs are committed with `git -C .speckit` (see [Committing specs](#committing-specs)), and that the `speckit-*` skills appear from the **next** session (see [Notes](#notes)). Offer to push `speckit` and the code branch.
 
 ## Joining a repo that is already set up
 
@@ -148,6 +148,18 @@ After editing a skill under `.speckit/.kiro/skills`, copy it into the checkout a
 ```bash
 .specify/scripts/sync-kiro-skills.sh
 ```
+
+## Committing specs
+
+Specs and every other Spec Kit change are written into `.speckit/`, so they are **not** tracked by the code branch. `git status` in the repo root stays clean while `git -C .speckit status` shows the new files. Commit them on `speckit`:
+
+```bash
+git -C .speckit add -A
+git -C .speckit commit -m "Add spec for <feature>"
+git push origin speckit        # only when you want to publish it
+```
+
+An AI tool that runs a Spec Kit command (`/speckit-specify`, `/speckit-plan`, `/speckit-tasks`, ...) must commit in `.speckit/` afterwards, because committing in the repo root records nothing.
 
 ## Notes
 
