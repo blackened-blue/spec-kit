@@ -21,6 +21,7 @@ The AI tool follows the [runbook](#runbook-for-the-ai-tool) below. Nothing is pu
 | `.claude/skills` | symlink to `.speckit/.claude/skills` | The `speckit-*` skills for Claude Code |
 | `.kiro/skills` | **copy** of `.speckit/.kiro/skills` | The same skills for KiroCrew |
 | `.specify` | symlink to `.speckit/.specify` | Spec Kit templates, scripts and constitution |
+| `specs` | symlink to `.speckit/specs` | Feature specs, plans and tasks that Spec Kit writes to `<repo>/specs/` |
 | `scripts/setup-speckit.sh` | code branch | One command that rebuilds all of the above in a fresh clone |
 | `.claude/settings.json` | code branch | `SessionStart` hook that runs the setup script when `.speckit/` is missing |
 | `.kiro/steering/speckit-setup.md` | code branch | Steering rule that tells KiroCrew to run the same script |
@@ -73,8 +74,9 @@ cd .speckit
 specify init --here --force --non-interactive --integration claude
 
 # KiroCrew reads skills from .kiro/skills, so mirror the Claude skills.
-mkdir -p .kiro .specify/scripts
+mkdir -p .kiro .specify/scripts specs
 cp -R .claude/skills .kiro/skills
+touch specs/.gitkeep    # Spec Kit writes feature specs to <repo>/specs/, which links here
 
 git -C "$SRC" show origin/speckit:.specify/scripts/sync-kiro-skills.sh > .specify/scripts/sync-kiro-skills.sh
 chmod +x .specify/scripts/sync-kiro-skills.sh
@@ -106,6 +108,7 @@ Append these lines to `.gitignore`:
 /.claude/skills
 /.kiro/skills
 /.specify
+/specs
 ```
 
 Then create the links and the `.kiro/skills` copy, and commit:
@@ -122,6 +125,7 @@ git commit -m "Add Spec Kit setup"
 git worktree list                       # shows .speckit on branch speckit
 git status --short                      # clean
 ls .claude/skills .kiro/skills          # 10 speckit-* skills each
+ls -ld specs                            # symlink to .speckit/specs
 git -C .speckit log --oneline           # the "Add Spec Kit" commit
 ```
 
