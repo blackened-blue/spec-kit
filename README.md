@@ -1,6 +1,13 @@
 # spec-kit
 
-A reference setup for keeping [GitHub Spec Kit](https://github.com/github/spec-kit) in any repository without mixing it into the code branches. Spec Kit lives on its own branch, `speckit`, and every checkout links to it.
+A reference setup for keeping [GitHub Spec Kit](https://github.com/github/spec-kit) in any repository without mixing it into the code branches. You choose one of two modes:
+
+| Mode | Where Spec Kit files live | Shared with the team | Survives a new clone |
+|---|---|---|---|
+| **A. Separate branch** | On branch `speckit`, linked into every checkout | Yes, push `speckit` | Yes, one command rebuilds the links |
+| **B. Local only** | Plain files in your working tree, hidden from git | No | No, set up again on the new clone |
+
+Mode B never commits anything and creates no branch. Specs, plans and the constitution exist only on your machine, so they have no git history and are lost if you delete the folder or switch machines. Pick it when you want Spec Kit without any trace in the repo.
 
 ## Quick Start
 
@@ -9,6 +16,8 @@ Send this one line to your AI tool:
 ```text
 Install the spec-kit: https://github.com/blackened-blue/spec-kit, load the github spec-kit, then set up speckit branch for my repo from scratch.
 ```
+
+For mode B, say so in the line, for example: "... then set up Spec Kit for my repo **without a separate branch** (local only)." If you do not say which mode, the AI tool asks before it installs anything.
 
 The AI tool follows the [runbook](#runbook-for-the-ai-tool) below. Nothing is pushed until you say so.
 
@@ -20,7 +29,9 @@ Spec Kit is wired only for the harnesses you use. Name them in the line (for exa
 | KiroCrew | `kirocrew` | `claude` (same skills) | `.kiro/skills` copy |
 | Kiro CLI | `kiro-cli` | `kiro-cli` | `.kiro/prompts` copy (untested) |
 
-## What you get
+## What you get (mode A)
+
+For mode B see [Mode B: local only](#mode-b-local-only).
 
 | Path in your repo | Lives on | What it is |
 |---|---|---|
@@ -60,7 +71,9 @@ git ls-remote --exit-code --heads origin speckit && echo "speckit exists on orig
 
 If `speckit` or `.speckit` already exists, this repo is already set up. Use [Joining a repo that is already set up](#joining-a-repo-that-is-already-set-up) instead.
 
-### 0b. Choose harnesses
+### 0b. Choose mode and harnesses
+
+If the user did not say whether they want a separate `speckit` branch (mode A) or local only (mode B), ask first. For mode B, skip the rest of this runbook and follow [Mode B: local only](#mode-b-local-only).
 
 If the user did not name the harnesses to set up (`claude-code`, `kirocrew`, `kiro-cli`, any subset), ask before going on. Set up only what they choose. The steps below say which parts belong to which harness.
 
@@ -126,10 +139,15 @@ Append these lines to `.gitignore`, keeping only the harness lines the user chos
 /.speckit/
 /.specify
 /specs
-/.claude/skills     # claude-code
-/.kiro/skills       # kirocrew
-/.kiro/prompts      # kiro-cli
+# claude-code
+/.claude/skills
+# kirocrew
+/.kiro/skills
+# kiro-cli
+/.kiro/prompts
 ```
+
+Keep each comment on its own line: a `#` after a pattern is part of the pattern.
 
 Then create the links and copies for the chosen harnesses, and commit:
 
@@ -180,6 +198,60 @@ git push origin speckit        # only when you want to publish it
 ```
 
 An AI tool that runs a Spec Kit command (`/speckit-specify`, `/speckit-plan`, `/speckit-tasks`, ...) must commit in `.speckit/` afterwards, because committing in the repo root records nothing.
+
+## Mode B: local only
+
+Spec Kit is installed straight into the working tree and hidden from git. No branch, no worktree, no symlinks, no hook, no steering rule and no setup script are created. Nothing in the repo changes, so there is nothing to commit or push.
+
+Run from the root of the target repo. Do not push anything.
+
+```bash
+git rev-parse --show-toplevel                      # must be the repo root
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+specify --version
+
+specify init --here --force --non-interactive --integration claude    # skills for claude-code and kirocrew
+# Only if the user chose kiro-cli:
+# specify integration install kiro-cli                                # adds .kiro/prompts
+# Only if the user chose kirocrew: it reads skills from .kiro/skills, so copy the Claude skills.
+# mkdir -p .kiro && cp -R .claude/skills .kiro/skills
+```
+
+Hide the files with the repo-local exclude file, which is not tracked and not shared. Keep only the lines for the harnesses the user chose:
+
+```bash
+cat >> "$(git rev-parse --git-path info/exclude)" <<'EOF'
+# Spec Kit, local only
+/.specify/
+/specs/
+# claude-code
+/.claude/skills/
+# kirocrew
+/.kiro/skills/
+# kiro-cli
+/.kiro/prompts/
+EOF
+git status --short                                 # must show nothing for these paths
+```
+
+`specify init` can rewrite an existing tracked `.claude/settings.json` (we saw the same JSON reformatted, with its contents kept). If `git status` shows it as modified, review the change and undo it with `git checkout -- .claude/settings.json` unless the user wants it.
+
+Say what was created, that nothing was committed or pushed, that the files exist only on this machine, and that the `speckit-*` skills appear from the next session. A fresh clone gets none of this, so run the commands above again there.
+
+### Moving from mode B to mode A
+
+This path is untested. Create the branch, move the files into the worktree, drop the exclude lines, then continue with runbook steps 2 to 4 (skip the `specify init` lines, the files are already there):
+
+```bash
+git worktree add --orphan -b speckit .speckit
+mkdir -p .speckit/.claude .speckit/.kiro
+mv .specify .speckit/.specify
+[ -d specs ] && mv specs .speckit/specs
+mv .claude/skills .speckit/.claude/skills     # claude-code
+mv .kiro/skills .speckit/.kiro/skills         # kirocrew
+mv .kiro/prompts .speckit/.kiro/prompts       # kiro-cli
+# then remove the "Spec Kit, local only" block from $(git rev-parse --git-path info/exclude)
+```
 
 ## Notes
 
