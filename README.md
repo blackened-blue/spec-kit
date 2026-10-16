@@ -253,10 +253,116 @@ mv .kiro/prompts .speckit/.kiro/prompts       # kiro-cli
 # then remove the "Spec Kit, local only" block from $(git rev-parse --git-path info/exclude)
 ```
 
+## Windows (PowerShell)
+
+Everything here is PowerShell 5.1 or newer, no Git Bash or WSL. **Untested on Windows**; only a macOS check of the bash twin exists. Requirements: `git` 2.42+, `uv`, and for mode A real symlinks, which need **Developer Mode** (Settings > System > For developers) or an administrator shell. `scripts\setup-speckit.ps1` tests this first and stops without changing anything if symlinks are not allowed. If PowerShell blocks the script, run it as `powershell -ExecutionPolicy Bypass -File scripts\setup-speckit.ps1 -Harness claude-code`.
+
+### Mode A (separate branch)
+
+Run from the repo root, on the code branch. The AI tool follows the same order as the bash runbook; do not push until the user asks.
+
+```powershell
+# 0. preconditions
+git rev-parse --show-toplevel
+git --version                                                  # 2.42 or newer
+git show-ref --verify --quiet refs/heads/speckit; if ($LASTEXITCODE -eq 0) { "speckit exists" }
+git ls-remote --exit-code --heads origin speckit; if ($LASTEXITCODE -eq 0) { "speckit exists on origin" }
+if (Test-Path .speckit) { ".speckit exists" }
+
+# 1. install the CLI, 2. fetch the reference files
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+specify --version
+$SRC = Join-Path ([IO.Path]::GetTempPath()) "spec-kit-$([guid]::NewGuid())"
+git clone --no-single-branch --depth 1 -b develop https://github.com/blackened-blue/spec-kit.git $SRC
+
+# 3. build the speckit branch
+git worktree add --orphan -b speckit .speckit
+Set-Location .speckit
+specify init --here --force --non-interactive --integration claude   # skills for claude-code and kirocrew
+# Only if the user chose kiro-cli:
+# specify integration install kiro-cli
+New-Item -ItemType Directory -Force .kiro, .specify\scripts, specs | Out-Null
+# Only if the user chose kirocrew:
+Copy-Item -Recurse .claude\skills .kiro\skills
+New-Item -ItemType File -Force specs\.gitkeep | Out-Null
+# cmd keeps the bytes (and LF line endings) exactly as git prints them
+cmd /c "git -C `"$SRC`" show origin/speckit:.specify/scripts/sync-kiro-skills.sh > .specify\scripts\sync-kiro-skills.sh"
+cmd /c "git -C `"$SRC`" show origin/speckit:.gitignore > .gitignore"
+git add -A
+git commit -m "Add Spec Kit"
+Set-Location ..
+
+# 4. wire the code branch
+New-Item -ItemType Directory -Force scripts | Out-Null
+Copy-Item "$SRC\scripts\setup-speckit.ps1", "$SRC\scripts\setup-speckit.sh" scripts\   # keep the .sh for macOS and Linux teammates
+```
+
+Per chosen harness, as in the bash runbook: for `claude-code` merge the `hooks.SessionStart` entry from `$SRC\.claude\settings.json` into `.claude\settings.json` (it is the bash hook, which skips itself on Windows), then add the Windows hook to `.claude\settings.local.json` (see below); for `kirocrew` copy `$SRC\.kiro\steering\speckit-setup.md` into `.kiro\steering\`; `kiro-cli` needs nothing. Then add the ignore lines, keeping only the chosen harnesses, and create the links:
+
+```powershell
+$lines = '# Spec Kit lives on branch speckit (worktree at .speckit/)', '/.speckit/', '/.specify', '/specs',
+         '# claude-code', '/.claude/skills', '# kirocrew', '/.kiro/skills', '# kiro-cli', '/.kiro/prompts'   # drop the pairs you do not use
+[IO.File]::AppendAllText((Join-Path (Get-Location) '.gitignore'), ($lines -join "`n") + "`n")   # LF line endings
+scripts\setup-speckit.ps1 -Harness claude-code,kirocrew        # list only the chosen ones
+git add scripts .gitignore                                     # plus .claude\settings.json and/or .kiro\steering\speckit-setup.md
+git commit -m "Add Spec Kit setup"
+
+# 5. verify
+git worktree list                                              # shows .speckit on branch speckit
+git status --short                                             # clean
+Get-ChildItem .claude\skills, .kiro\skills                     # 10 speckit-* skills each (chosen harnesses)
+(Get-Item specs).LinkType                                      # SymbolicLink
+git -C .speckit log --oneline
+```
+
+Joining a repo that is already set up: `scripts\setup-speckit.ps1 -Harness claude-code,kirocrew`. The choice is saved in `<git-dir>\speckit-harness` and later runs add to it. For Claude Code to run the script at session start on Windows, create `.claude\settings.local.json` (personal, ignored by git; if it already exists, merge the `hooks.SessionStart` entry into it) with:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "Set-Location $env:CLAUDE_PROJECT_DIR; if (-not (Test-Path .speckit)) { powershell -NoProfile -ExecutionPolicy Bypass -File scripts\\setup-speckit.ps1 -Harness claude-code }"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Each Windows user does this once per clone, because the file is not committed. The KiroCrew steering rule tells it to run the `.ps1` on Windows. After editing a skill under `.speckit\.kiro\skills`, re-run the script to copy it into the checkout. Committing specs is the same `git -C .speckit add -A` and `git -C .speckit commit` as in [Committing specs](#committing-specs).
+
+### Mode B (local only)
+
+```powershell
+git rev-parse --show-toplevel
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+specify init --here --force --non-interactive --integration claude
+# Only if the user chose kiro-cli:
+# specify integration install kiro-cli
+# Only if the user chose kirocrew:
+# New-Item -ItemType Directory -Force .kiro | Out-Null; Copy-Item -Recurse .claude\skills .kiro\skills
+
+$exclude = Join-Path (Get-Location) (git rev-parse --git-path info/exclude)
+$lines = '# Spec Kit, local only', '/.specify/', '/specs/',
+         '# claude-code', '/.claude/skills/', '# kirocrew', '/.kiro/skills/', '# kiro-cli', '/.kiro/prompts/'   # drop the pairs you do not use
+[IO.File]::AppendAllText($exclude, ($lines -join "`n") + "`n")
+git status --short                                             # must show nothing for these paths
+```
+
+The notes in [Mode B: local only](#mode-b-local-only) about `.claude/settings.json` apply too (`git checkout -- .claude/settings.json`). To move to mode A: `git worktree add --orphan -b speckit .speckit`, then `Move-Item` each of `.specify`, `specs`, `.claude\skills`, `.kiro\skills`, `.kiro\prompts` (the ones that exist) into `.speckit\` at the same relative path, remove the "Spec Kit, local only" block from the exclude file, and continue with steps 3 and 4 above. This move is untested.
+
 ## Notes
 
 - **Skills appear from the second session.** Claude Code scans skills before its `SessionStart` hook runs, so on a fresh clone the first session installs them and the next session sees them. Tested with `claude -p`: the first run listed no `speckit-*` skills, the second listed all 10.
 - **Why `.kiro/skills` is a copy.** KiroCrew resolves each skill's real path and rejects any that lands outside `<project>/.kiro/skills`, so a symlink into `.speckit/` does not load. `.claude/skills` and `.specify` work as symlinks. KiroCrew also needs the project to be trusted in its dashboard before it loads project skills.
 - **Kiro CLI is untested.** `.kiro/prompts` is a copy like `.kiro/skills`, but nobody has checked whether Kiro CLI accepts a symlink there or loads the copy. Re-run the script after editing prompts under `.speckit/.kiro/prompts`.
 - **Why only `skills` is a symlink inside `.claude/` and `.kiro/`.** Making the whole directory a symlink stopped skills from loading, and a real directory leaves room for the code branch to track `.claude/settings.json` and `.kiro/steering/`.
+- **Platforms.** Only macOS is tested. macOS and Linux use the bash script; Windows uses [PowerShell](#windows-powershell) and `scripts\setup-speckit.ps1`, which is untested. Mode A needs real symlinks, so both scripts create a test symlink in the git dir first and stop without changing anything if that fails (on Windows: Developer Mode or an administrator shell).
+- **Claude Code hooks on Windows.** The committed `.claude/settings.json` has only the bash `SessionStart` hook, and it does nothing when `$OS` is `Windows_NT`. The PowerShell hook lives in each Windows user's own `.claude/settings.local.json` (git-ignored), so macOS and Linux never see it; a PowerShell entry in the committed file made macOS print `Failed to run: Hook "if ($env:OS ...` at every session start (checked with `claude -p`). Reports from other users say hooks on Windows can still run through Git Bash despite `"shell": "powershell"`, and the field is not documented officially, so if the hook never fires run the `.ps1` by hand.
 - **`.claude/settings.local.json`** is personal. It is ignored on the `speckit` branch.
