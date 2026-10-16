@@ -12,6 +12,24 @@ set -euo pipefail
 BRANCH=speckit
 cd "$(git rev-parse --show-toplevel)"
 
+# .specify and specs must be real symlinks. On Windows (Git Bash) `ln -s` silently makes a copy
+# unless Developer Mode is on and MSYS=winsymlinks:nativestrict is set, which would leave specs
+# and .specify pointing at nothing. Probe inside the git dir first and stop before changing anything.
+probe_dir="$(git rev-parse --absolute-git-dir)"
+rm -f "$probe_dir/symlink-probe" "$probe_dir/symlink-probe-target"
+: > "$probe_dir/symlink-probe-target"
+ln -s symlink-probe-target "$probe_dir/symlink-probe" 2>/dev/null || true
+if [ ! -L "$probe_dir/symlink-probe" ]; then
+  rm -f "$probe_dir/symlink-probe" "$probe_dir/symlink-probe-target"
+  echo "ERROR: this shell cannot create real symlinks, so Spec Kit would be set up with copies." >&2
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      echo "On Windows use scripts/setup-speckit.ps1 from PowerShell instead (needs Developer Mode or admin)." >&2 ;;
+  esac
+  exit 1
+fi
+rm -f "$probe_dir/symlink-probe" "$probe_dir/symlink-probe-target"
+
 CHOICE_FILE="$(git rev-parse --git-common-dir)/speckit-harness"
 requested=""
 while [ $# -gt 0 ]; do

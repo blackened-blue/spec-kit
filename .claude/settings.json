@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && { [ -e .speckit ] || scripts/setup-speckit.sh --harness claude-code >&2; }"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && { [ \"${OS:-}\" = Windows_NT ] || [ -e .speckit ] || scripts/setup-speckit.sh --harness claude-code >&2; }"
           }
         ]
       }
