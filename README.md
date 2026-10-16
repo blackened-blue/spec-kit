@@ -21,7 +21,7 @@ For mode B, say so in the line, for example: "... then set up Spec Kit for my re
 
 The AI tool follows the [runbook](#runbook-for-the-ai-tool) below. Nothing is pushed until you say so.
 
-Spec Kit is wired only for the harnesses you use. Name them in the line (for example "... for Claude Code and Kiro CLI"). If you do not, the AI tool asks which of these you want before it installs anything:
+Spec Kit is wired only for the harnesses you use. By default the AI tool wires the harness it is running in, with no question. Name others in the line to add them (for example "... for Claude Code and Kiro CLI"). It asks only when it cannot tell which harness it is running in:
 
 | Harness | `--harness` value | `specify init --integration` | Wired into the checkout as |
 |---|---|---|---|
@@ -57,9 +57,11 @@ The links and copies are git-ignored on the code branch, so the code branch neve
 
 ## Runbook for the AI tool
 
-Run from the root of the target repo, on the branch that holds its code. Stop and ask the user if a step does not match what is described. Do not push anything until the user asks; when asked, push by explicit branch name (`git push origin speckit`), never to a protected branch.
+Run from the root of the target repo, on the branch that holds its code (a new empty repo is fine, see step 0). Stop and ask the user if a step does not match what is described. Do not push anything until the user asks; when asked, push by explicit branch name (`git push origin speckit`), never to a protected branch.
 
 ### 0. Check preconditions
+
+If the current folder is not inside a git repo (`git rev-parse --show-toplevel` fails), do not ask: run `git init` in it, tell the user you did, and carry on. `git init` only creates a local `.git` folder; there is no remote and nothing is pushed. Do this only for the folder the user opened, never for a parent or a home folder. Mode A works on an empty repo with no commits (checked: `git worktree add --orphan -b speckit .speckit` succeeds). If the folder is inside a repo, use that repo's root and do not init.
 
 ```bash
 git rev-parse --show-toplevel          # must be the repo root
@@ -75,7 +77,13 @@ If `speckit` or `.speckit` already exists, this repo is already set up. Use [Joi
 
 If the user did not say whether they want a separate `speckit` branch (mode A) or local only (mode B), ask first. For mode B, skip the rest of this runbook and follow [Mode B: local only](#mode-b-local-only).
 
-If the user did not name the harnesses to set up (`claude-code`, `kirocrew`, `kiro-cli`, any subset), ask before going on. Set up only what they choose. The steps below say which parts belong to which harness.
+Pick the harnesses without asking, in this order:
+
+1. The ones the user named (`claude-code`, `kirocrew`, `kiro-cli`, any subset). Add the harness you are running in too, unless the user said otherwise.
+2. Otherwise the harness you are running in: Claude Code is `claude-code`, KiroCrew is `kirocrew`, Kiro CLI is `kiro-cli`.
+3. Only if you cannot tell which harness you are running in, ask the user which of the three they want.
+
+Say which harnesses you picked in your report, and that more can be added later by re-running the setup script with `--harness` (`-Harness` on Windows). Set up only the picked ones. The steps below say which parts belong to which harness.
 
 ### 1. Install the Spec Kit CLI
 
@@ -259,7 +267,7 @@ Everything here is PowerShell 5.1 or newer, no Git Bash or WSL. **Untested on Wi
 
 ### Mode A (separate branch)
 
-Run from the repo root, on the code branch. The AI tool follows the same order as the bash runbook; do not push until the user asks.
+Run from the repo root, on the code branch. The AI tool follows the same order as the bash runbook, including running `git init` when the folder is not a repo yet; do not push until the user asks.
 
 ```powershell
 # 0. preconditions
