@@ -4,7 +4,9 @@
 # so .kiro/skills in the checkout must be real files. Re-run after editing skills here.
 set -euo pipefail
 
-SPEC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"   # the speckit worktree
+# cd -P so `../..` walks the real path. A logical cd keeps the `.specify` symlink and resolves
+# to <repo> instead of <repo>/.speckit, which would put CODE_ROOT outside the repo.
+SPEC_ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"   # the speckit worktree
 CODE_ROOT="$(dirname "$SPEC_ROOT")"                                   # checkout that contains it
 SRC="$SPEC_ROOT/.kiro/skills"
 DEST="$CODE_ROOT/.kiro/skills"
@@ -16,4 +18,6 @@ DEST="$CODE_ROOT/.kiro/skills"
 mkdir -p "$CODE_ROOT/.kiro"
 rm -rf "$DEST"
 cp -R "$SRC" "$DEST"
+# Skill directories are created by Spec Kit, so their names are always alnum.
+# shellcheck disable=SC2012
 echo "synced $(ls "$DEST" | wc -l | tr -d ' ') skills -> $DEST"
