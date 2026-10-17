@@ -1,0 +1,200 @@
+name: Qoder
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          ref: speckit
+          path: speckit-src
+
+      # Pinned rather than apt-get: the Ubuntu package lags a version, so CI and a local
+      # shellcheck run would disagree about what is clean.
+      - name: Install shellcheck
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/sc.tar.xz \
+            https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          tar -xf /tmp/sc.tar.xz -C /tmp
+          echo "/tmp/shellcheck-v0.11.0" >> "$GITHUB_PATH"
+
+      - name: Lint the code-branch setup script
+        run: shellcheck -x scripts/setup-speckit.sh
+
+      # sync-kiro-skills.sh lives on branch speckit and is called by the setup script for kirocrew
+      - name: Lint the speckit-branch sync script
+        run: shellcheck -x speckit-src/.specify/scripts/sync-kiro-skills.sh
+
+  config:
+    name: wiring checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          ref: speckit
+          path: speckit-src
+
+      # A malformed hook silently means "Spec Kit never installs", so check the files
+      # the runbook promises instead of trusting them.
+      - name: Check hooks, steering rule and ignore rules
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, sys
+
+          fail = []
+
+          settings = json.loads(pathlib.Path(".claude/settings.json").read_text())
+          commands = [
+              hook.get("command", "")
+              for entry in settings["hooks"]["SessionStart"]
+              for hook in entry.get("hooks", [])
+          ]
+          if not any("setup-speckit.sh" in c for c in commands):
+              fail.append(".claude/settings.json SessionStart does not run setup-speckit.sh")
+
+          steering = pathlib.Path(".kiro/steering/speckit-setup.md")
+          if not steering.is_file() or "setup-speckit" not in steering.read_text():
+              fail.append(".kiro/steering/speckit-setup.md missing or does not mention setup-speckit")
+
+          ignore = pathlib.Path(".gitignore").read_text().splitlines()
+          for path in ("/.speckit/", "/.specify", "/specs", "/.claude/skills", "/.kiro/skills"):
+              if path not in ignore:
+                  fail.append(f".gitignore is missing {path}")
+
+          script = pathlib.Path("scripts/setup-speckit.sh")
+          if not script.stat().st_mode & 0o100:
+              fail.append("scripts/setup-speckit.sh is not executable")
+
+          sys.exit("\n".join(fail) if fail else None)
+          PY
+
+      - name: Check the speckit branch holds Spec Kit material
+        run: |
+          set -euo pipefail
+          test -d speckit-src/.claude/skills/speckit-specify
+          test -d speckit-src/.kiro/skills/speckit-specify
+          test -d speckit-src/specs
+          test -f speckit-src/.specify/scripts/sync-kiro-skills.sh
+
+  smoke:
+    name: setup on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          ref: speckit
+          path: speckit-src
+
+      # Replays the runbook's "Joining a repo that is already set up" in a throwaway repo:
+      # a code branch plus a speckit branch carrying the real Spec Kit material.
+      - name: Build a scratch repo with a speckit branch
+        run: |
+          set -euo pipefail
+          git --version
+          TARGET="$RUNNER_TEMP/target"
+          rm -rf "$TARGET"
+          git init -q --initial-branch=main "$TARGET"
+          cd "$TARGET"
+          git -c user.name=ci -c user.email=ci@example.com commit -q --allow-empty -m "code branch"
+          git worktree add --orphan -b speckit .speckit
+          rsync -a --exclude .git "$GITHUB_WORKSPACE/speckit-src/" .speckit/
+          cd .speckit
+          git add -A
+          git -c user.name=ci -c user.email=ci@example.com commit -q -m "Add Spec Kit"
+          cd "$TARGET"
+          mkdir -p scripts
+          cp "$GITHUB_WORKSPACE/scripts/setup-speckit.sh" scripts/
+          chmod +x scripts/setup-speckit.sh
+          printf '%s\n' '/.speckit/' '/.specify' '/specs' '/.claude/skills' '/.kiro/skills' >> .gitignore
+          git add .gitignore scripts
+          git -c user.name=ci -c user.email=ci@example.com commit -q -m "Add Spec Kit setup"
+          echo "TARGET=$TARGET" >> "$GITHUB_ENV"
+
+      - name: Run setup-speckit.sh
+        run: |
+          set -euo pipefail
+          cd "$TARGET"
+          scripts/setup-speckit.sh --harness claude-code,kirocrew
+          scripts/setup-speckit.sh   # second run reads the choice file, and must be a no-op
+
+      - name: Verify links, skills and a clean code branch
+        run: |
+          set -euo pipefail
+          cd "$TARGET"
+          fail() { echo "$@" >&2; exit 1; }
+
+          [ -L .specify ] || fail ".specify is not a symlink"
+          [ -L specs ] || fail "specs is not a symlink"
+          [ -L .claude/skills ] || fail ".claude/skills is not a symlink"
+          [ -e .specify ] || fail ".specify points at nothing"
+          [ -d .speckit/specs ] || fail "specs does not resolve into the worktree"
+          [ -L .kiro/skills ] && fail ".kiro/skills must be a copy; KiroCrew rejects symlinked skills"
+          [ -e .kiro/skills ] || fail ".kiro/skills is missing"
+
+          # grep -c exits 1 on zero matches, which set -e would report as a mystery failure.
+          # Skill directory names are created by Spec Kit, so `ls` is safe here.
+          # shellcheck disable=SC2012
+          count_speckit_skills() { ls "$1" | { grep -c '^speckit-' || true; }; }
+
+          expected="$(count_speckit_skills .speckit/.claude/skills)"
+          [ "$expected" -gt 0 ] || fail "no speckit-* skills on branch speckit"
+          [ "$(count_speckit_skills .claude/skills)" -eq "$expected" ] || fail ".claude/skills count != $expected"
+          [ "$(count_speckit_skills .kiro/skills)" -eq "$expected" ] || fail ".kiro/skills count != $expected"
+
+          # the kirocrew copy is refreshed from the worktree by the sync script
+          marker="sync-probe-$GITHUB_RUN_ATTEMPT"
+          printf '%s\n' "$marker" >> "$(find .speckit/.kiro/skills -type f | head -1)"
+          .specify/scripts/sync-kiro-skills.sh
+          grep -rq "$marker" .kiro/skills || fail "sync-kiro-skills.sh did not update .kiro/skills"
+
+          [ -z "$(git status --porcelain)" ] || fail "code branch picked up Spec Kit files: $(git status --porcelain)"
+
+  powershell:
+    name: PSScriptAnalyzer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Parse setup-speckit.ps1
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/setup-speckit.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Output $_.ToString() }; exit 1 }
+
+      # Errors only. The warnings in a setup script (Write-Host, unapproved verbs) are style noise.
+      - name: Analyze setup-speckit.ps1
+        shell: pwsh
+        run: |
+          $findings = Invoke-ScriptAnalyzer -Path scripts/setup-speckit.ps1 -Severity Error
+          if ($findings) { $findings | Format-List; exit 1 }

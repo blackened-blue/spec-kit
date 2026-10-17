@@ -43,8 +43,11 @@ requested="${requested//,/ }"
 for h in $requested; do
   case "$h" in claude-code|kirocrew|kiro-cli) ;; *) echo "unknown harness: $h" >&2; exit 1 ;; esac
 done
+# Unquoted on purpose: both lists are split on spaces/newlines into separate words.
+# shellcheck disable=SC2046,SC2086
 harnesses="$(printf '%s\n' $requested $(cat "$CHOICE_FILE" 2>/dev/null) | sort -u | tr '\n' ' ')"
 [ -n "${harnesses// /}" ] || { echo "no harness chosen; run: $0 --harness claude-code,kirocrew,kiro-cli (any subset)" >&2; exit 1; }
+# shellcheck disable=SC2086
 printf '%s\n' $harnesses > "$CHOICE_FILE"
 
 if [ ! -e .speckit ]; then
