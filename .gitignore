@@ -9,5 +9,8 @@
 # Local Claude Code settings
 .claude/settings.local.json
 
+# Local Qoder settings (holds the GitHub MCP token)
+.qoder/settings.local.json
+
 # macOS
 .DS_Store
